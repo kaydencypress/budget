@@ -1,2 +1,5 @@
-/home/dev_iant/workspace/github.com/kaydencypress/budget/import/*
-/home/dev_iant/workspace/github.com/kaydencypress/budget/export*
+# Imports containing personal data
+/import
+
+# Exports containing personal data
+/export
