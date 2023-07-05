@@ -1,10 +1,8 @@
-Mortgage
-Utilities & Services
-Transportation
-Grocery
-Health
-Donations
-Fun & Hobbies
-Other
-Savings
-Income
+Income,7567
+Bills & Utilities,3200
+Savings,2000
+Miscellaneous,630
+Grocery,550
+Health,475
+Transportation,75
+Donations,70

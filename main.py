@@ -1,9 +1,8 @@
 import csv
-import string
 import os
 from datetime import datetime
 import openpyxl
-from openpyxl.chart import BarChart,ProjectedPieChart,Reference
+from openpyxl.chart import ProjectedPieChart,Reference
 from openpyxl.chart.label import DataLabelList
 import re
 
@@ -49,6 +48,26 @@ class Menu:
                 self.__prompt_user = False
         return selection
 
+class Category:
+    def __init__(self,name,budget):
+        self.name = name
+        self.budget = budget
+        self.spending = []
+    
+    def calc_monthly_total(self,transactions):
+        for transaction in transactions:
+            if transaction.category == self.name:
+                transaction_month = datetime.strptime(transaction.date,"%m/%d/%Y").strftime("%m-%Y")
+                first_transacton = True
+                for monthly_total in self.spending:
+                    if monthly_total["month"] == transaction_month:
+                        monthly_total["amount"] += transaction.amount
+                        first_transacton = False
+                        break
+                if first_transacton:
+                    self.spending.append({"month":transaction_month,"amount":transaction.amount})
+        self.spending.sort(key=lambda x:x["amount"],reverse=True)
+
 def import_transactions(dir):
     transactions = []
     try:
@@ -65,15 +84,25 @@ def import_transactions(dir):
                             type = row[4] 
                             amount = float(row[5])
                             tmp_category = row[3]
-                            category = get_category(type,description,tmp_category)
+                            category = categorize_transaction(type,description,tmp_category)
                             transactions.append(Transaction(date,description,amount,type,category))
                     elif filename.startswith("Checking"):
                         date = row[0]
                         description = row[4]
-                        type = "Checking"
                         amount = float(row[1])
-                        category = get_category(type,description)
+                        type = "Checking"
+                        category = categorize_transaction(type,description)
                         transactions.append(Transaction(date,description,amount,type,category))
+                    elif filename.startswith("Savings"):
+                        date = row[0]
+                        description = row[4]
+                        amount = float(row[1])
+                        if "TRANSFER" in description.upper():
+                            type = category = "Payment"
+                        else:
+                            transactions.append(Transaction(date,description,-amount,"Savings","Savings"))
+                            if amount > 0:
+                                transactions.append(Transaction(date,description,amount,"Income","Income"))
                     else:
                         print(f"Skipping invalid file: {filename}")
                     row_count+=1
@@ -81,23 +110,35 @@ def import_transactions(dir):
         print(e)
     return transactions
 
-def read_category_map(filepath):
-    category_map = {}
+def read_category_csv(filepath):
+    categories = []
     try:
         with open(filepath) as f:
             csv_reader = csv.reader(f)
             for row in csv_reader:
-                description = row[0]
-                category = row[1]
-                category_map[description] = category
+                category_budget = Category(row[0],int(row[1]))
+                categories.append(category_budget)
     except Exception as e:
         print(e)
-    return category_map
+    return categories
 
-def get_category(type,description,tmp_category=None):
+def read_category_map(filepath):
+    category_mapping = {}
+    try:
+        with open(filepath) as f:
+            csv_reader = csv.reader(f)
+            for row in csv_reader:
+                category_mapping[row[0]] = row[1]
+    except Exception as e:
+        print(e)
+    return category_mapping
+
+def categorize_transaction(type,description,tmp_category=None):
     # map category from source data where possible
     if type == "Payment":
         return "Payment"
+    elif type == "Income":
+        return "Income"
     elif tmp_category == "Gas" or tmp_category == "Travel":
         return "Transportation"
     elif tmp_category == "Food & Drink" or tmp_category == "Groceries":
@@ -111,7 +152,7 @@ def get_category(type,description,tmp_category=None):
 
     # use custom mapping by description
     category_map = read_category_map(category_map_file)
-    
+
     # parse transaction descriptions
     detail = None
     if "*" in description:
@@ -145,13 +186,13 @@ def get_category(type,description,tmp_category=None):
 def map_description_or_detail(description,detail):
     if detail:
         # Prompt user whether to create categorize mapping based on description or detail
-        menu_items = []
-        menu_items.append(("1","Description"))
-        menu_items.append(("2","Detail"))
-        menu_items.append(("S","[Skip Expense]"))
-        menu_items.append(("Q","[Quit Categorizing]"))
+        menu_options = []
+        menu_options.append(("1","Description"))
+        menu_options.append(("2","Detail"))
+        menu_options.append(("S","[Skip Expense]"))
+        menu_options.append(("Q","[Quit Categorizing]"))
         prompt = f"Categorizing expense: {description} (Detail: {detail})\nCategorize based on description or detail?"
-        description_detail_menu = Menu(prompt,menu_items)
+        description_detail_menu = Menu(prompt,menu_options)
         selection = description_detail_menu.get_user_input()
         # Evaluate user response
         if selection == "Q":
@@ -168,18 +209,18 @@ def map_description_or_detail(description,detail):
         return description
 
 def create_category_mapping(description,map_file,categories_file):
-    categories = [line.rstrip() for line in open(categories_file)]
+    categories = read_category_csv(categories_file)
     # Prompt user to map a category
-    menu_items = []
+    menu_options = []
     menu_num = 1
     for category in categories:
-        menu_items.append((str(menu_num),category))
+        menu_options.append((str(menu_num),category.name))
         menu_num+=1
-    menu_items.append(("N","[Add New Category]"))
-    menu_items.append(("S","[Skip Expense]"))
-    menu_items.append(("X","[Exclude Expense from Reporting]"))
-    menu_items.append(("Q","[Quit Categorizing]"))
-    categorize_expense_menu = Menu("Create a category mapping for unmapped expense: " + description,menu_items)
+    menu_options.append(("N","[Add New Category]"))
+    menu_options.append(("S","[Skip Expense]"))
+    menu_options.append(("X","[Ignore Expense from Reporting]"))
+    menu_options.append(("Q","[Quit Categorizing]"))
+    categorize_expense_menu = Menu("Create a category mapping for unmapped expense: " + description,menu_options)
     selection = categorize_expense_menu.get_user_input()
     # Evaluate user response
     # skip categorizing current transation and stop categorizing transactions
@@ -191,22 +232,22 @@ def create_category_mapping(description,map_file,categories_file):
     elif selection == "S":
         return "Other"
     elif selection == "X":
-        category = "Exclude"
+        category = "Ignore"
     # prompt user and add new category name
     elif selection == "N":
-        prompt_user = "True"
+        prompt_user = True
         while prompt_user:
             category = input("Enter name of new category: ")
             if category.isalnum():
                 prompt_user = False
         with open(categories_file,'a') as f:
-            f.write(category + "\n")
+            f.write(category + ",0\n")
     # user selected an existing category
     else:
         category = categories[int(selection) - 1]
     # Add new mapping to category map file
     with open(map_file,'a') as f:
-        row = description + "," + category + "\n"
+        row = description + "," + category.name + "\n"
         f.write(row)
     return category
 
@@ -218,91 +259,120 @@ def categorize_unmapped_transactions(description,map_file,categories_file,detail
         category = "Other"
     return category
 
-def calc_monthly_totals(transactions):
-    totals = {}
-    for transaction in transactions:
-        if transaction.category != "Payment" and transaction.category != "Exclude":
-            transaction_month = datetime.strptime(transaction.date,"%m/%d/%Y").strftime("%m-%Y")
-            if transaction_month not in totals:
-                totals[transaction_month] = {}
-                totals[transaction_month]["Total"] = 0
-            if transaction.category not in totals[transaction_month]:
-                totals[transaction_month][transaction.category] = 0
-            totals[transaction_month][transaction.category] += transaction.amount
-            if transaction.category != "Income":
-                totals[transaction_month]["Total"] += transaction.amount
-    return totals
+def edit_budget(categories_file):
+    categories = read_category_csv(categories_file)
+    menu_options = []
+    menu_num = 1
+    for category in categories:
+        menu_options.append((str(menu_num),f"{category.name} [${category.budget}]"))
+        menu_num+=1
+    menu_options.append(("N","[New Category]"))
+    menu_options.append(("Q","[Quit Editing Budget]"))
+    prompt = "Select category to edit monthly budget"
+    budget_menu = Menu(prompt,menu_options)
+    # prompt user and add new category name
+    prompt_user = True
+    while prompt_user:
+        selection = budget_menu.get_user_input()
+        if selection == "Q":
+            prompt_user = False
+            return
+        elif selection == "N":
+            category_name = input("Enter name of new category: ")
+            if category_name.isalnum():
+                selected_category = Category(category_name,0)
+                categories.append(selected_category)
+                prompt_user = False
+            else:
+                print("Invalid entry: category name must be alphanumeric")
+        else:
+            selected_category = categories[int(selection)-1]
+            prompt_user = False
 
-def report_monthly_totals(totals):
-    for month in totals:
-        print(f"======= {month} =======")
-        for category in totals[month]:
-            if category != "Exclude":
-                print(f"{category}: {format(totals[month][category],'.2f')}")
+    prompt_user = True
+    while prompt_user:
+        new_budget = input(f"Enter new budget for {selected_category.name}: $")
+        if new_budget == "":
+            prompt_user = False
+        try:
+            new_budget = int(new_budget)
+            prompt_user = False
+        except:
+            print("Invalid input, must be integer")
+
+    if new_budget:
+        selected_category.budget = new_budget
+        categories.sort(key=lambda x:x.budget,reverse=True)
+        with open(categories_file,"w") as f:
+            for category in categories:
+                f.write(f"{category.name},{category.budget}\n")
     return
 
-def report_transaction_details(transactions):
-    for transaction in transactions:
-        print(f"Transaction on {transaction.date} for {transaction.amount}: {transaction.description} [{transaction.category}]")
-    return
-
-def export_totals_csv(totals,filepath):
-    with open(filepath,'w+') as f:
-        for month in totals:
-            for category in totals[month]:
-                f.write(f"{month},{category},{format(totals[month][category],'.2f')}\n")
-    return
-
-def export_excel(totals,transactions,filepath):
+def export_excel(categories,transactions,filepath):
     wb = openpyxl.Workbook()
-    for current_month in totals:
-        # add data for total spending by category
-        summary_title = current_month + " Summary"
-        summary_sheet = wb.create_sheet(summary_title)
-        header = ["Category","Amount"]
-        summary_sheet.append(header)
-        ws = wb[summary_title]
-        for category in totals[current_month]:
-            row = [category,totals[current_month][category]]
-            if category != "Income" and category != "Total":  
-                summary_sheet.append(row)
-        ws["D2"] = "Expenses"
-        ws["E2"] = totals[current_month]["Total"]
-        if "Income" in totals[current_month]:
-            ws["D1"] = "Income"
-            ws["E1"] = totals[current_month]["Income"]
-            ws["D3"] = "Net"
-            ws["E3"] = totals[current_month]["Income"]+totals[current_month]["Total"]
-
-        # create chart for total spending by category
-        projected_pie = ProjectedPieChart()
-        projected_pie.type = 'bar'
-        projected_pie.width = 30
-        projected_pie.height = 15
-        data_range = Reference(summary_sheet,min_col=2,min_row=2,max_col=2,max_row=len(totals[current_month])-1)
-        label_range = Reference(summary_sheet,min_col=1,min_row=2,max_col=1,max_row=len(totals[current_month])-1)
-        projected_pie.add_data(data_range,titles_from_data=False)
-        projected_pie.set_categories(label_range)
-        projected_pie.dataLabels = DataLabelList()
-        projected_pie.dataLabels.showPercent = True
-        projected_pie.dataLabels.showLeaderLines = True
-        projected_pie.dataLabels.showCatName = True
-        projected_pie.dataLabels.separator = ','
-        projected_pie.title = "Expenses by Category"
-        projected_pie.legend.position = 'b'
-        summary_sheet.add_chart(projected_pie,"G1")
+    total_spending = {}
+    total_income = {}
+    for category in categories:
+        for monthly_total in category.spending:
+            # initialize excel sheets
+            month = monthly_total["month"]
+            summary_title = month + " Summary"
+            if summary_title not in wb.sheetnames:
+                ws = wb.create_sheet(summary_title)
+                header = ["Category","Amount","Budget"]
+                ws.append(header)
+            else:
+                ws = wb[summary_title]
+            
+            # add data for total spending by category
+            if month not in total_income:
+                total_income[month] = 0
+            if month not in total_spending:
+                total_spending[month] = 0
+            row = [category.name,monthly_total["amount"],category.budget]
+            if category.name == "Income":
+                total_income[month] += monthly_total["amount"]
+            else:
+                ws.append(row)
+                total_spending[month] += monthly_total["amount"]
+                
+            # create chart for total spending by category
+            projected_pie = ProjectedPieChart()
+            projected_pie.type = 'bar'
+            projected_pie.width = 30
+            projected_pie.height = 15
+            data_range = Reference(ws,min_col=2,min_row=2,max_col=2,max_row=len(categories))
+            label_range = Reference(ws,min_col=1,min_row=2,max_col=1,max_row=len(categories))
+            projected_pie.add_data(data_range,titles_from_data=False)
+            projected_pie.set_categories(label_range)
+            projected_pie.dataLabels = DataLabelList()
+            projected_pie.dataLabels.showPercent = True
+            projected_pie.dataLabels.showLeaderLines = True
+            projected_pie.dataLabels.showCatName = True
+            projected_pie.dataLabels.separator = ','
+            projected_pie.title = "Expenses by Category"
+            projected_pie.legend.position = 'b'
+            ws.add_chart(projected_pie,"H1")
 
         # add data for individual transaction details
-        detail_title = current_month + " Transactions"
+        detail_title = month + " Transactions"
         detail_sheet = wb.create_sheet(detail_title)
         header = ["Date","Amount","Description","Category","Type"]
         detail_sheet.append(header)
         for transaction in transactions:
-            if transaction.category != "Exclude" and  transaction.category != "Payment":
+            if transaction.category != "Ignore" and  transaction.category != "Payment":
                 transaction_month = datetime.strptime(transaction.date,"%m/%d/%Y").strftime("%m-%Y")
-                if transaction_month == current_month:
+                if transaction_month == month:
                     row = [transaction.date,transaction.amount,transaction.description,transaction.category,transaction.type]
                     detail_sheet.append(row)
+
+    # add data for total income and expenses
+    ws = wb.create_sheet("Monthly Totals")
+    ws.append(["Month","Income","Expenses","Net"])
+    for month in total_spending:
+        ws.append([month,total_income[month],total_spending[month],total_income[month]+total_spending[month]])
+
+    # save Excel sheet
     try:
         wb.save(filepath)
         print(f"Wrote output report: {filepath}")
@@ -311,10 +381,11 @@ def export_excel(totals,transactions,filepath):
     return
 
 def main():
+    categories = read_category_csv(categories_file)
     transactions = import_transactions(import_dir)
-    totals = calc_monthly_totals(transactions)
-    # report_transaction_details(transactions)
-    # report_monthly_totals(totals)
-    export_excel(totals,transactions,outfile_xlsx)
+    for category in categories:
+        category.calc_monthly_total(transactions)
+    # edit_budget(categories_file)
+    export_excel(categories,transactions,outfile_xlsx)
 
 main()
