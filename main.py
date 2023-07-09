@@ -5,6 +5,8 @@ import openpyxl
 from openpyxl.chart import BarChart,ProjectedPieChart,Reference
 from openpyxl.chart.label import DataLabelList
 from openpyxl.worksheet.table import Table,TableStyleInfo
+from openpyxl.worksheet.dimensions import ColumnDimension, DimensionHolder
+from openpyxl.utils import get_column_letter
 import re
 
 dir = "/home/dev_iant/workspace/github.com/kaydencypress/budget/"
@@ -116,7 +118,7 @@ def read_category_csv(filepath):
         with open(filepath) as f:
             csv_reader = csv.reader(f)
             for row in csv_reader:
-                category_budget = Category(row[0],int(row[1]))
+                category_budget = Category(row[0],float(row[1]))
                 categories.append(category_budget)
     except Exception as e:
         print(e)
@@ -295,10 +297,10 @@ def edit_budget(categories_file):
         if new_budget == "":
             prompt_user = False
         try:
-            new_budget = int(new_budget)
+            new_budget = float(new_budget)
             prompt_user = False
         except:
-            print("Invalid input, must be integer")
+            print("Invalid input, must be float")
 
     if new_budget:
         selected_category.budget = new_budget
@@ -376,10 +378,14 @@ def export_excel(categories,transactions,totals,filepath):
 
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
+        # adjust column widths
+        for column_cells in ws.columns:
+            length = max(len(cell_value_str(cell.value)) for cell in column_cells) + 5
+            ws.column_dimensions[column_cells[0].column_letter].width = length
         # create tables for data
-        max_col_alpha = chr(ws.max_column+64)
-        data_table = Table(displayName=sheet_name.replace(" ","_"), ref=f"A1:{max_col_alpha}{ws.max_row}")
-        data_table.tableStyleInfo = TableStyleInfo(name="data_table_style",showRowStripes=True, showColumnStripes=True)
+        table_range = "A1:" + get_column_letter(ws.max_column) + str(ws.max_row)
+        data_table = Table(displayName=sheet_name.replace(" ","_"), ref=table_range)
+        data_table.tableStyleInfo = TableStyleInfo(name="TableStyleLight13",showRowStripes=True, showColumnStripes=False,showFirstColumn=False,showLastColumn=False)
         ws.add_table(data_table)
         if "SUMMARY" in sheet_name.upper():
             # create chart for monthly spending by category
@@ -435,6 +441,13 @@ def create_sheet_if_needed(wb,title,header):
     else:
         ws = wb[title]
     return ws
+
+def cell_value_str(value):
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        return "%.2f" % value
+    return str(value)
 
 def main():
     categories = read_category_csv(categories_file)
