@@ -1,6 +1,6 @@
 # Imports containing personal data
-/import
-category_map.csv
+/import_testing
+category_map_testing.csv
 
 # Exports containing personal data
-/export
+/export_testing
