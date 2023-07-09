@@ -13,6 +13,7 @@ import argparse
 argParser = argparse.ArgumentParser()
 argParser.add_argument("-b", "--budget", action="store_true", help="review and modify budget")
 argParser.add_argument("-c", "--categorize", action="store_true", help="categorize unmapped transactions")
+argParser.add_argument("-o", "--outfile",help="name of output file, not including extension")
 args = argParser.parse_args()
 
 if args.categorize:
@@ -20,11 +21,17 @@ if args.categorize:
 else:
     bool_categorize_unmapped = False
 
+if args.outfile:
+    outfilename = str(args.outfile) + ".xls"
+else:
+    outfilename = "export.xls"
+
 dir = "/home/dev_iant/workspace/github.com/kaydencypress/budget/"
 import_dir = dir + "import/"
 category_map_file = dir + "category_map.csv"
 categories_file = dir + "categories.txt"
-outfile = dir + "export/export.xls"
+export_dir = dir + "export/"
+outfile = export_dir + outfilename
 
 class Transaction:
     def __init__(self,date,description,amount,type,category):
@@ -82,7 +89,7 @@ class Category:
 
 def import_transactions(dir):
     transactions = []
-    if os.path.isdir(dir):
+    if os.path.isdir(import_dir):
         try:
             for filename in os.listdir(dir):
                 filepath = os.path.join(dir,filename)
@@ -122,7 +129,7 @@ def import_transactions(dir):
         except Exception as e:
             print(e)
     else:
-        os.makedirs(dir)
+        os.makedirs(import_dir)
     if not transactions:
         print("WARNING: No transactions to import.")
         print("Export credit card and/or bank account transactions in CSV format and save to the /import directory without renaming the files.")
@@ -423,6 +430,11 @@ def export_excel(categories,transactions,totals,filepath):
             ws.add_chart(projected_pie,"F1")
 
     # save Excel sheet
+    if not os.path.isdir(export_dir):
+        os.makedirs(export_dir)
+    if not os.path.exists(outfile):
+        f = open(outfile,"w+")
+        f.close()
     try:
         wb.save(filepath)
         print(f"Wrote output report: {filepath}")
