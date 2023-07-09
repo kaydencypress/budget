@@ -82,44 +82,52 @@ class Category:
 
 def import_transactions(dir):
     transactions = []
-    try:
-        for filename in os.listdir(dir):
-            filepath = os.path.join(dir,filename)
-            with open(filepath) as f:
-                csv_reader = csv.reader(f)
-                row_count = 0
-                for row in csv_reader:
-                    if filename.startswith("Chase"):
-                        if row_count != 0:
+    if os.path.isdir(dir):
+        try:
+            for filename in os.listdir(dir):
+                filepath = os.path.join(dir,filename)
+                with open(filepath) as f:
+                    csv_reader = csv.reader(f)
+                    row_count = 0
+                    for row in csv_reader:
+                        if filename.startswith("Chase"):
+                            if row_count != 0:
+                                date = row[0]
+                                description = row[2]
+                                type = row[4] 
+                                amount = float(row[5])
+                                tmp_category = row[3]
+                                category = categorize_transaction(type,description,tmp_category)
+                                transactions.append(Transaction(date,description,amount,type,category))
+                        elif filename.startswith("Checking"):
                             date = row[0]
-                            description = row[2]
-                            type = row[4] 
-                            amount = float(row[5])
-                            tmp_category = row[3]
-                            category = categorize_transaction(type,description,tmp_category)
+                            description = row[4]
+                            amount = float(row[1])
+                            type = "Checking"
+                            category = categorize_transaction(type,description)
                             transactions.append(Transaction(date,description,amount,type,category))
-                    elif filename.startswith("Checking"):
-                        date = row[0]
-                        description = row[4]
-                        amount = float(row[1])
-                        type = "Checking"
-                        category = categorize_transaction(type,description)
-                        transactions.append(Transaction(date,description,amount,type,category))
-                    elif filename.startswith("Savings"):
-                        date = row[0]
-                        description = row[4]
-                        amount = float(row[1])
-                        if "TRANSFER" in description.upper():
-                            type = category = "Payment"
+                        elif filename.startswith("Savings"):
+                            date = row[0]
+                            description = row[4]
+                            amount = float(row[1])
+                            if "TRANSFER" in description.upper():
+                                type = category = "Payment"
+                            else:
+                                transactions.append(Transaction(date,description,-amount,"Savings","Savings"))
+                                if amount > 0:
+                                    transactions.append(Transaction(date,description,amount,"Income","Income"))
                         else:
-                            transactions.append(Transaction(date,description,-amount,"Savings","Savings"))
-                            if amount > 0:
-                                transactions.append(Transaction(date,description,amount,"Income","Income"))
-                    else:
-                        print(f"Skipping invalid file: {filename}")
-                    row_count+=1
-    except Exception as e:
-        print(e)
+                            print(f"Skipping invalid file: {filename}")
+                        row_count+=1
+        except Exception as e:
+            print(e)
+    else:
+        os.makedirs(dir)
+    if not transactions:
+        print("WARNING: No transactions to import.")
+        print("Export credit card and/or bank account transactions in CSV format and save to the /import directory without renaming the files.")
+        print("Chase credit card and Wells Fargo bank accounts are supported; other financial institutions have not been tested.")
+        quit()
     return transactions
 
 def read_category_csv(filepath):
