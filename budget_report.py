@@ -61,7 +61,7 @@ class Menu:
         return selection
 
 class Category:
-    def __init__(self,name,budget):
+    def __init__(self,name,budget=0.0):
         self.name = name
         self.budget = budget
         self.spending = []
