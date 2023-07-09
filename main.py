@@ -2,7 +2,7 @@ import csv
 import os
 from datetime import datetime
 import openpyxl
-from openpyxl.chart import ProjectedPieChart,Reference
+from openpyxl.chart import BarChart,ProjectedPieChart,Reference
 from openpyxl.chart.label import DataLabelList
 import re
 
@@ -308,41 +308,53 @@ def edit_budget(categories_file):
                 f.write(f"{category.name},{category.budget}\n")
     return
 
-def export_excel(categories,transactions,filepath):
-    wb = openpyxl.Workbook()
-    total_spending = {}
-    total_income = {}
+def calc_overall_totals(categories,transactions):
+    # TODO: totals = [
+        #   {"month":"01-2023",
+        #     "total_spending":1000,
+        #      "total_income":3000
+        # }]
+    totals = []
     for category in categories:
-        for monthly_total in category.spending:
-            # initialize excel sheets
-            month = monthly_total["month"]
-            summary_title = month + " Summary"
-            if summary_title not in wb.sheetnames:
-                ws = wb.create_sheet(summary_title)
-                header = ["Category","Amount","Budget"]
-                ws.append(header)
-            else:
-                ws = wb[summary_title]
-            
-            # add data for total spending by category
-            if month not in total_income:
-                total_income[month] = 0
-            if month not in total_spending:
-                total_spending[month] = 0
-            row = [category.name,monthly_total["amount"],category.budget]
+        category.calc_monthly_total(transactions)
+        for monthly_spend in category.spending:
+            # add to sum of total income and expenses per month
+            new_month = True
             if category.name == "Income":
-                total_income[month] += monthly_total["amount"]
+                total_type = "total_income"
             else:
-                ws.append(row)
-                total_spending[month] += monthly_total["amount"]
+                total_type = "total_spending"
+            for monthly_total in totals:
+                if monthly_spend["month"] == monthly_total["month"]:
+                    monthly_total[total_type] += monthly_spend["amount"]
+                    new_month = False
+            if new_month:
+                if total_type == "total_income":
+                    totals.append({"month":monthly_spend["month"],"total_income":monthly_spend["amount"],"total_spending":0})
+                else:
+                    totals.append({"month":monthly_spend["month"],"total_income":0,"total_spending":monthly_spend["amount"]})
+
+    totals.sort(key=lambda x:datetime.strptime(x["month"],"%M-%Y"),reverse=False)
+    return totals
+        
+def export_excel(categories,transactions,totals,filepath):
+    wb = openpyxl.Workbook()
+    wb.remove(wb["Sheet"])
+    for category in categories:
+        for monthly_spend in category.spending:
+            # write data for monthly spending by category
+            summary_sheet = create_sheet_if_needed(wb,monthly_spend["month"]+" Summary",["Category","Amount","Budget","Net"])
+            row = [category.name,monthly_spend["amount"],category.budget,monthly_spend["amount"]+category.budget]
+            if category.name != "Income":
+                summary_sheet.append(row)
                 
-            # create chart for total spending by category
+            # create chart for monthly spending by category
             projected_pie = ProjectedPieChart()
             projected_pie.type = 'bar'
-            projected_pie.width = 30
-            projected_pie.height = 15
-            data_range = Reference(ws,min_col=2,min_row=2,max_col=2,max_row=len(categories))
-            label_range = Reference(ws,min_col=1,min_row=2,max_col=1,max_row=len(categories))
+            projected_pie.width = 20
+            projected_pie.height = 10
+            data_range = Reference(summary_sheet,min_col=2,min_row=2,max_col=2,max_row=len(categories))
+            label_range = Reference(summary_sheet,min_col=1,min_row=2,max_col=1,max_row=len(categories))
             projected_pie.add_data(data_range,titles_from_data=False)
             projected_pie.set_categories(label_range)
             projected_pie.dataLabels = DataLabelList()
@@ -352,25 +364,32 @@ def export_excel(categories,transactions,filepath):
             projected_pie.dataLabels.separator = ','
             projected_pie.title = "Expenses by Category"
             projected_pie.legend.position = 'b'
-            ws.add_chart(projected_pie,"H1")
+            summary_sheet.add_chart(projected_pie,"F1")
 
-        # add data for individual transaction details
-        detail_title = month + " Transactions"
-        detail_sheet = wb.create_sheet(detail_title)
-        header = ["Date","Amount","Description","Category","Type"]
-        detail_sheet.append(header)
-        for transaction in transactions:
-            if transaction.category != "Ignore" and  transaction.category != "Payment":
-                transaction_month = datetime.strptime(transaction.date,"%m/%d/%Y").strftime("%m-%Y")
-                if transaction_month == month:
-                    row = [transaction.date,transaction.amount,transaction.description,transaction.category,transaction.type]
-                    detail_sheet.append(row)
+            # write data for individual transaction details
+            detail_sheet = create_sheet_if_needed(wb,monthly_spend["month"]+" Transactions",["Date","Amount","Description","Category","Type"])
+            for transaction in transactions:
+                if transaction.category != "Ignore" and  transaction.category != "Payment":
+                    transaction_month = datetime.strptime(transaction.date,"%m/%d/%Y").strftime("%m-%Y")
+                    if transaction_month == monthly_spend["month"]:
+                        row = [transaction.date,transaction.amount,transaction.description,transaction.category,transaction.type]
+                        detail_sheet.append(row)
 
-    # add data for total income and expenses
-    ws = wb.create_sheet("Monthly Totals")
-    ws.append(["Month","Income","Expenses","Net"])
-    for month in total_spending:
-        ws.append([month,total_income[month],total_spending[month],total_income[month]+total_spending[month]])
+    # write data for total income and expenses
+    totals_sheet = create_sheet_if_needed(wb,"Monthly Totals",["Month","Income","Expenses","Net"])
+    for monthly_total in totals:
+        totals_sheet.append([monthly_total["month"],monthly_total["total_income"],-monthly_total["total_spending"],monthly_total["total_income"]+monthly_total["total_spending"]])
+
+    # create bar chart for total income and expenses
+    bar_chart = BarChart()
+    bar_chart.width = 20
+    bar_chart.height = 10
+    data_range = Reference(totals_sheet,min_col=2,min_row=1,max_col=3,max_row=len(totals))
+    label_range = Reference(totals_sheet,min_col=1,min_row=2,max_col=1,max_row=len(totals))
+    bar_chart.add_data(data_range,titles_from_data=True)
+    bar_chart.set_categories(label_range)
+    bar_chart.title = "Income and Expenses"
+    totals_sheet.add_chart(bar_chart,"F1")
 
     # save Excel sheet
     try:
@@ -380,12 +399,39 @@ def export_excel(categories,transactions,filepath):
         print(f"Error: unable to write output report: {e}")
     return
 
+def create_sheet_if_needed(wb,title,header):
+    if title not in wb.sheetnames:
+        try:
+            new_sheet_date = datetime.strptime(title[0:7],"%m-%Y")
+            i = 0
+            for sheet_name in wb.sheetnames:
+                current_sheet_date = datetime.strptime(sheet_name[0:7],"%m-%Y")
+                # find index for where to put new sheet
+                if new_sheet_date > current_sheet_date:
+                    break
+                elif new_sheet_date < current_sheet_date:
+                    i+=1
+                    continue
+                elif "SUMMARY" in title.upper():
+                    break
+                else:
+                    i+=1
+                    break
+            ws = wb.create_sheet(title,index=i)
+        except:
+            # add sheet to the beginning if not for a specific month
+            ws = wb.create_sheet(title,index=0)
+        
+        ws.append(header)
+    else:
+        ws = wb[title]
+    return ws
+
 def main():
     categories = read_category_csv(categories_file)
     transactions = import_transactions(import_dir)
-    for category in categories:
-        category.calc_monthly_total(transactions)
+    totals = calc_overall_totals(categories,transactions)
     # edit_budget(categories_file)
-    export_excel(categories,transactions,outfile_xlsx)
+    export_excel(categories,transactions,totals,outfile_xlsx)
 
 main()
