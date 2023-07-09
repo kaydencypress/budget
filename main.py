@@ -4,6 +4,7 @@ from datetime import datetime
 import openpyxl
 from openpyxl.chart import BarChart,ProjectedPieChart,Reference
 from openpyxl.chart.label import DataLabelList
+from openpyxl.worksheet.table import Table
 import re
 
 dir = "/home/dev_iant/workspace/github.com/kaydencypress/budget/"
@@ -11,7 +12,7 @@ import_dir = dir + "import/"
 category_map_file = dir + "category_map.csv"
 categories_file = dir + "categories.txt"
 outfile_csv = dir + "export/export.csv"
-outfile_xlsx = dir + "export/export.xlsx"
+outfile_xlsx = dir + "export/export.xls"
 bool_categorize_unmapped = True
 
 class Transaction:
@@ -346,26 +347,7 @@ def export_excel(categories,transactions,totals,filepath):
             summary_sheet = create_sheet_if_needed(wb,monthly_spend["month"]+" Summary",["Category","Amount","Budget","Net"])
             row = [category.name,monthly_spend["amount"],category.budget,monthly_spend["amount"]+category.budget]
             if category.name != "Income":
-                summary_sheet.append(row)
-                
-            # create chart for monthly spending by category
-            projected_pie = ProjectedPieChart()
-            projected_pie.type = 'bar'
-            projected_pie.width = 20
-            projected_pie.height = 10
-            data_range = Reference(summary_sheet,min_col=2,min_row=2,max_col=2,max_row=len(categories))
-            label_range = Reference(summary_sheet,min_col=1,min_row=2,max_col=1,max_row=len(categories))
-            projected_pie.add_data(data_range,titles_from_data=False)
-            projected_pie.set_categories(label_range)
-            projected_pie.dataLabels = DataLabelList()
-            projected_pie.dataLabels.showPercent = True
-            projected_pie.dataLabels.showLeaderLines = True
-            projected_pie.dataLabels.showCatName = True
-            projected_pie.dataLabels.separator = ','
-            projected_pie.title = "Expenses by Category"
-            projected_pie.legend.position = 'b'
-            summary_sheet.add_chart(projected_pie,"F1")
-
+                summary_sheet.append(row)    
             # write data for individual transaction details
             detail_sheet = create_sheet_if_needed(wb,monthly_spend["month"]+" Transactions",["Date","Amount","Description","Category","Type"])
             for transaction in transactions:
@@ -379,6 +361,8 @@ def export_excel(categories,transactions,totals,filepath):
     totals_sheet = create_sheet_if_needed(wb,"Monthly Totals",["Month","Income","Expenses","Net"])
     for monthly_total in totals:
         totals_sheet.append([monthly_total["month"],monthly_total["total_income"],-monthly_total["total_spending"],monthly_total["total_income"]+monthly_total["total_spending"]])
+    totals_table = Table(displayName="total", ref=f"A1:D{totals_sheet.max_row}")
+    totals_sheet.add_table(totals_table)
 
     # create bar chart for total income and expenses
     bar_chart = BarChart()
@@ -390,6 +374,30 @@ def export_excel(categories,transactions,totals,filepath):
     bar_chart.set_categories(label_range)
     bar_chart.title = "Income and Expenses"
     totals_sheet.add_chart(bar_chart,"F1")
+
+    # create tables and monthly summary charts
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        data_table = Table(displayName=sheet_name.replace(" ","_"), ref=f"A1:D{ws.max_row}")
+        ws.add_table(data_table)
+        if "SUMMARY" in sheet_name.upper():
+            # create chart for monthly spending by category
+            projected_pie = ProjectedPieChart()
+            projected_pie.type = 'bar'
+            projected_pie.width = 20
+            projected_pie.height = 10
+            data_range = Reference(ws,min_col=2,min_row=2,max_col=2,max_row=ws.max_row)
+            label_range = Reference(ws,min_col=1,min_row=2,max_col=1,max_row=ws.max_row)
+            projected_pie.add_data(data_range,titles_from_data=False)
+            projected_pie.set_categories(label_range)
+            projected_pie.dataLabels = DataLabelList()
+            projected_pie.dataLabels.showPercent = True
+            projected_pie.dataLabels.showLeaderLines = True
+            projected_pie.dataLabels.showCatName = True
+            projected_pie.dataLabels.separator = ','
+            projected_pie.title = "Expenses by Category"
+            projected_pie.legend.position = 'b'
+            ws.add_chart(projected_pie,"F1")
 
     # save Excel sheet
     try:
