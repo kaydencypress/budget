@@ -4,15 +4,14 @@ from datetime import datetime
 import openpyxl
 from openpyxl.chart import BarChart,ProjectedPieChart,Reference
 from openpyxl.chart.label import DataLabelList
-from openpyxl.worksheet.table import Table
+from openpyxl.worksheet.table import Table,TableStyleInfo
 import re
 
 dir = "/home/dev_iant/workspace/github.com/kaydencypress/budget/"
 import_dir = dir + "import/"
 category_map_file = dir + "category_map.csv"
 categories_file = dir + "categories.txt"
-outfile_csv = dir + "export/export.csv"
-outfile_xlsx = dir + "export/export.xls"
+outfile = dir + "export/export.xls"
 bool_categorize_unmapped = True
 
 class Transaction:
@@ -375,10 +374,12 @@ def export_excel(categories,transactions,totals,filepath):
     bar_chart.title = "Income and Expenses"
     totals_sheet.add_chart(bar_chart,"F1")
 
-    # create tables and monthly summary charts
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
-        data_table = Table(displayName=sheet_name.replace(" ","_"), ref=f"A1:D{ws.max_row}")
+        # create tables for data
+        max_col_alpha = chr(ws.max_column+64)
+        data_table = Table(displayName=sheet_name.replace(" ","_"), ref=f"A1:{max_col_alpha}{ws.max_row}")
+        data_table.tableStyleInfo = TableStyleInfo(name="data_table_style",showRowStripes=True, showColumnStripes=True)
         ws.add_table(data_table)
         if "SUMMARY" in sheet_name.upper():
             # create chart for monthly spending by category
@@ -440,6 +441,6 @@ def main():
     transactions = import_transactions(import_dir)
     totals = calc_overall_totals(categories,transactions)
     # edit_budget(categories_file)
-    export_excel(categories,transactions,totals,outfile_xlsx)
+    export_excel(categories,transactions,totals,outfile)
 
 main()
