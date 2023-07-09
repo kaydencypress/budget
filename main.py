@@ -8,13 +8,23 @@ from openpyxl.worksheet.table import Table,TableStyleInfo
 from openpyxl.worksheet.dimensions import ColumnDimension, DimensionHolder
 from openpyxl.utils import get_column_letter
 import re
+import argparse
+
+argParser = argparse.ArgumentParser()
+argParser.add_argument("-b", "--budget", action="store_true", help="review and modify budget")
+argParser.add_argument("-c", "--categorize", action="store_true", help="categorize unmapped transactions")
+args = argParser.parse_args()
+
+if args.categorize:
+    bool_categorize_unmapped = True
+else:
+    bool_categorize_unmapped = False
 
 dir = "/home/dev_iant/workspace/github.com/kaydencypress/budget/"
 import_dir = dir + "import/"
 category_map_file = dir + "category_map.csv"
 categories_file = dir + "categories.txt"
 outfile = dir + "export/export.xls"
-bool_categorize_unmapped = True
 
 class Transaction:
     def __init__(self,date,description,amount,type,category):
@@ -262,52 +272,50 @@ def categorize_unmapped_transactions(description,map_file,categories_file,detail
     return category
 
 def edit_budget(categories_file):
-    categories = read_category_csv(categories_file)
-    menu_options = []
-    menu_num = 1
-    for category in categories:
-        menu_options.append((str(menu_num),f"{category.name} [${category.budget}]"))
-        menu_num+=1
-    menu_options.append(("N","[New Category]"))
-    menu_options.append(("Q","[Quit Editing Budget]"))
-    prompt = "Select category to edit monthly budget"
-    budget_menu = Menu(prompt,menu_options)
     # prompt user and add new category name
-    prompt_user = True
-    while prompt_user:
+    prompt_user_main = True
+    while prompt_user_main:
+        categories = read_category_csv(categories_file)
+        menu_options = []
+        menu_num = 1
+        for category in categories:
+            menu_options.append((str(menu_num),f"{category.name} [${category.budget}]"))
+            menu_num+=1
+        menu_options.append(("N","[New Category]"))
+        menu_options.append(("Q","[Quit Editing Budget]"))
+        prompt = "Select category to edit monthly budget"
+        budget_menu = Menu(prompt,menu_options)
         selection = budget_menu.get_user_input()
         if selection == "Q":
-            prompt_user = False
+            prompt_user_main = False
             return
         elif selection == "N":
             category_name = input("Enter name of new category: ")
             if category_name.isalnum():
                 selected_category = Category(category_name,0)
                 categories.append(selected_category)
-                prompt_user = False
             else:
                 print("Invalid entry: category name must be alphanumeric")
         else:
             selected_category = categories[int(selection)-1]
-            prompt_user = False
 
-    prompt_user = True
-    while prompt_user:
-        new_budget = input(f"Enter new budget for {selected_category.name}: $")
-        if new_budget == "":
-            prompt_user = False
-        try:
-            new_budget = float(new_budget)
-            prompt_user = False
-        except:
-            print("Invalid input, must be float")
+        prompt_user = True
+        while prompt_user:
+            new_budget = input(f"Enter new budget for {selected_category.name}: $")
+            if new_budget == "":
+                prompt_user = False
+            try:
+                new_budget = float(new_budget)
+                prompt_user = False
+            except:
+                print("Invalid input, must be float")
 
-    if new_budget:
-        selected_category.budget = new_budget
-        categories.sort(key=lambda x:x.budget,reverse=True)
-        with open(categories_file,"w") as f:
-            for category in categories:
-                f.write(f"{category.name},{category.budget}\n")
+        if new_budget:
+            selected_category.budget = new_budget
+            categories.sort(key=lambda x:x.budget,reverse=True)
+            with open(categories_file,"w") as f:
+                for category in categories:
+                    f.write(f"{category.name},{category.budget}\n")
     return
 
 def calc_overall_totals(categories,transactions):
@@ -450,10 +458,11 @@ def cell_value_str(value):
     return str(value)
 
 def main():
+    if args.budget:
+        edit_budget(categories_file)
     categories = read_category_csv(categories_file)
     transactions = import_transactions(import_dir)
     totals = calc_overall_totals(categories,transactions)
-    # edit_budget(categories_file)
     export_excel(categories,transactions,totals,outfile)
 
 main()

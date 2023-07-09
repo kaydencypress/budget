@@ -1,8 +1,8 @@
-Income,7567
-Bills & Utilities,3200
-Savings,2000
-Miscellaneous,630
-Grocery,550
-Health,475
-Transportation,75
-Donations,70
+Income,7567.0
+Bills & Utilities,3200.0
+Savings,2500.0
+Miscellaneous,630.0
+Grocery,550.0
+Health,200.0
+Transportation,75.0
+Donations,70.0
