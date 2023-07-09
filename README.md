@@ -10,3 +10,6 @@ options:
   -h, --help        show this help message and exit
   -b, --budget      review and modify budget
   -c, --categorize  categorize unmapped transactions
+
+Example output (censored):
+![example_output](https://github.com/kaydencypress/budget/assets/127451126/fe959ad3-7847-4f30-acd1-1df55ee917a4)
